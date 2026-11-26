@@ -5,6 +5,20 @@
 """
 from __future__ import annotations
 
+import errno
+import socket
+
+# 断网 / DNS 失败 / 路由不可达等纯传输层错误码，按网络错误重试，不计入认证失败
+_NETWORK_ERRNOS = {
+    errno.ENETUNREACH,
+    errno.EHOSTUNREACH,
+    errno.ENETDOWN,
+    errno.EHOSTDOWN,
+    errno.ECONNREFUSED,
+    errno.ECONNABORTED,
+    errno.ETIMEDOUT,
+}
+
 
 def is_token_or_session_failure(exc: BaseException) -> bool:
     """判断服务端是否明确报告认证失效。
@@ -46,11 +60,21 @@ def is_network_connection_error(exc: BaseException) -> bool:
         or "ConnectionResetError" in error_type
         or "TimeoutError" in error_type
         or getattr(exc, "winerror", None) == 121
+        or isinstance(exc, (socket.gaierror, ConnectionRefusedError, ConnectionAbortedError))
+        or (isinstance(exc, OSError) and exc.errno in _NETWORK_ERRNOS)
         or any(marker in error_text for marker in (
             "no close frame received or sent",
             "connection reset",
             "winerror 121",
             "信号灯超时时间已到",
             "semaphore timeout period has expired",
+            # 断网 / DNS 失败，部分库会包一层再抛出，只能按文本识别
+            "nodename nor servname",
+            "name or service not known",
+            "temporary failure in name resolution",
+            "getaddrinfo failed",
+            "network is unreachable",
+            "no route to host",
+            "connection refused",
         ))
     )

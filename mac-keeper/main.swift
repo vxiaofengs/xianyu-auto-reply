@@ -28,6 +28,16 @@ let kConfigFile = kSupportDir.appendingPathComponent("config.env")
 let kSetupStatusFile = kSupportDir.appendingPathComponent("setup-status")
 // 直接进后台；根路径是公开首页，无论登录与否都显示「登录」按钮
 let kAdminURL = URL(string: "http://127.0.0.1:9000/dashboard")!
+/// 服务反复崩溃后暂停多久再自动重试
+let kGaveUpRetryInterval: TimeInterval = 600
+
+/// 后台依赖（brew 管理），运行期每 kDependencyCheckTicks 次巡检（3s/次）检查一次
+let kDependencies: [(formula: String, title: String, port: UInt16)] = [
+    ("mysql@8.4", "MySQL", 3306),
+    ("redis", "Redis", 6379),
+]
+let kDependencyCheckTicks = 10
+let kDependencyRestartInterval: TimeInterval = 60
 
 enum SvcState {
     case stopped, starting, running, backoff, gaveUp, blocked
@@ -38,8 +48,8 @@ enum SvcState {
         case .starting: return "启动中"
         case .running: return "运行中"
         case .backoff: return "异常，稍后重启"
-        case .gaveUp: return "反复崩溃，已停止重试"
-        case .blocked: return "端口被其他程序占用"
+        case .gaveUp: return "反复崩溃，10 分钟后自动重试"
+        case .blocked: return "端口被其他程序占用，10 分钟后重试"
         }
     }
 
@@ -184,8 +194,13 @@ final class ServiceManager {
     let queue = DispatchQueue(label: "xianyu.services")
     var onChange: (() -> Void)?
     var onGaveUp: ((ServiceDef) -> Void)?
+    /// 依赖停止 / 恢复事件：(名称, 是否已恢复)
+    var onDependencyEvent: ((String, Bool) -> Void)?
     private var timer: DispatchSourceTimer?
     private(set) var dependencyError: String?
+    private var tickCount = 0
+    private var depDown: Set<String> = []
+    private var depLastStart: [String: Date] = [:]
 
     init(config: Config) { self.config = config }
 
@@ -258,8 +273,9 @@ final class ServiceManager {
     /// 确保 MySQL / Redis 在运行
     private func ensureDependencies() {
         dependencyError = nil
+        depDown = []
         let brew = config.brewPrefix + "/bin/brew"
-        let deps: [(String, UInt16)] = [("mysql@8.4", 3306), ("redis", 6379)]
+        let deps = kDependencies.map { ($0.formula, $0.port) }
         for (formula, port) in deps where !isPortOpen(port) {
             runCommand(brew, ["services", "start", formula], env: childEnv)
         }
@@ -272,6 +288,28 @@ final class ServiceManager {
             if !ok { dependencyError = "\(formula) 未能启动" }
         }
         notify()
+    }
+
+    /// 运行期巡检 MySQL / Redis：被清理工具等外部程序停掉时自动拉起（brew services start 会同时恢复开机自启）
+    private func checkDependencies() {
+        let brew = config.brewPrefix + "/bin/brew"
+        let now = Date()
+        for dep in kDependencies {
+            if isPortOpen(dep.port) {
+                if depDown.remove(dep.formula) != nil {
+                    DispatchQueue.main.async { self.onDependencyEvent?(dep.title, true) }
+                }
+                continue
+            }
+            if depDown.insert(dep.formula).inserted {
+                DispatchQueue.main.async { self.onDependencyEvent?(dep.title, false) }
+            }
+            if let last = depLastStart[dep.formula], now.timeIntervalSince(last) < kDependencyRestartInterval { continue }
+            depLastStart[dep.formula] = now
+            runCommand(brew, ["services", "start", dep.formula], env: childEnv)
+        }
+        let downTitles = kDependencies.filter { depDown.contains($0.formula) }.map(\.title)
+        dependencyError = downTitles.isEmpty ? nil : "\(downTitles.joined(separator: "、")) 已停止，正在自动恢复"
     }
 
     /// 端口被占用时：本程序残留的进程直接清理，其他程序则标记为冲突
@@ -305,6 +343,7 @@ final class ServiceManager {
         guard p.wantRunning else { return }
         guard freePort(p) else {
             p.state = .blocked
+            p.restartAt = Date().addingTimeInterval(kGaveUpRetryInterval)
             notify()
             return
         }
@@ -367,8 +406,9 @@ final class ServiceManager {
         let now = Date()
         p.crashTimes = p.crashTimes.filter { now.timeIntervalSince($0) < 300 } + [now]
         if p.crashTimes.count > 5 {
+            // 暂停一段时间再试，而不是永久放弃：届时 5 分钟内的崩溃记录已过期，计数自然清零
             p.state = .gaveUp
-            p.restartAt = nil
+            p.restartAt = now.addingTimeInterval(kGaveUpRetryInterval)
             let def = p.def
             DispatchQueue.main.async { self.onGaveUp?(def) }
         } else {
@@ -387,6 +427,10 @@ final class ServiceManager {
     }
 
     private func tick() {
+        tickCount += 1
+        if tickCount % kDependencyCheckTicks == 0, procs.contains(where: { $0.wantRunning }) {
+            checkDependencies()
+        }
         for p in procs {
             if p.pid > 0 {
                 var status: Int32 = 0
@@ -529,7 +573,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func startManager(_ cfg: Config) {
         let m = ServiceManager(config: cfg)
         m.onChange = { [weak self] in self?.updateIcon() }
-        m.onGaveUp = { [weak self] def in self?.sendNotice("\(def.title)反复崩溃", "已停止自动重启，请在闲鱼助手菜单里查看日志。") }
+        m.onGaveUp = { [weak self] def in self?.sendNotice("\(def.title)反复崩溃", "已暂停，10 分钟后自动重试；也可以在闲鱼助手菜单里查看日志或立即重试。") }
+        m.onDependencyEvent = { [weak self] title, recovered in
+            if recovered {
+                self?.sendNotice("\(title) 已恢复", "\(title) 已自动重新启动，闲鱼功能恢复正常。")
+            } else {
+                self?.sendNotice("\(title) 被停止了", "可能是清理 / 加速类软件关掉的，正在自动重新启动。建议把它加入该软件的白名单。")
+            }
+        }
         manager = m
         m.startAll()
         updateIcon()

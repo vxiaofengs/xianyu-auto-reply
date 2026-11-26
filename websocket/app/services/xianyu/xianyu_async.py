@@ -3256,7 +3256,34 @@ class XianyuAsync:
                             was_connected
                             and self.connection_manager.record_short_disconnect(connected_duration)
                         ):
-                            # 频繁短连接断开，禁用账号
+                            cm = self.connection_manager
+                            if cm.frequent_disconnect_strikes == 0:
+                                # 首次触发多半是网络不稳：冷却后重试并通知，不直接禁用
+                                cm.frequent_disconnect_strikes = 1
+                                cm.short_disconnect_times.clear()
+                                cm.network_failures = 0
+                                cooldown_minutes = cm.frequent_disconnect_cooldown // 60
+                                logger.warning(
+                                    f"【{self.cookie_id}】频繁短连接断开，暂停 {cooldown_minutes} 分钟后重试；"
+                                    "冷却后仍频繁断开将禁用账号"
+                                )
+                                cm.set_connection_state(
+                                    ConnectionState.RECONNECTING,
+                                    f"频繁断开，冷却{cooldown_minutes}分钟",
+                                )
+                                try:
+                                    await self.send_token_refresh_notification(
+                                        f"连接频繁断开（5 分钟内 {cm.frequent_disconnect_limit} 次），"
+                                        f"可能是网络不稳定或账号在其他设备登录。已暂停 {cooldown_minutes} 分钟后自动重试，"
+                                        "若仍频繁断开将禁用该账号。",
+                                        "frequent_disconnect",
+                                    )
+                                except Exception as notify_error:
+                                    logger.warning(f"【{self.cookie_id}】发送频繁断开通知失败: {notify_error}")
+                                await self._interruptible_sleep(cm.frequent_disconnect_cooldown)
+                                continue
+
+                            # 冷却后仍频繁短连接断开，禁用账号
                             logger.error(f"【{self.cookie_id}】频繁短连接断开，禁用账号")
                             try:
                                 from common.db.compat import db_manager

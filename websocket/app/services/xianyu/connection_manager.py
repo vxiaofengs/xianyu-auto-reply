@@ -54,6 +54,9 @@ class ConnectionManager:
         self.short_connection_threshold = 30  # 短连接阈值（秒）
         self.frequent_disconnect_window = 300  # 频繁断开检测窗口（5分钟）
         self.frequent_disconnect_limit = 5  # 频繁断开次数限制
+        # 网络不稳也会频繁短断开：首次触发先冷却重试，冷却后仍频繁断开才禁用账号
+        self.frequent_disconnect_cooldown = 900  # 冷却时长（秒）
+        self.frequent_disconnect_strikes = 0  # 已触发冷却的次数，出现稳定长连接后清零
         
         # 心跳配置
         self.heartbeat_interval = xianyu_instance.heartbeat_interval
@@ -106,6 +109,7 @@ class ConnectionManager:
         if connected_duration >= self.short_connection_threshold:
             # 长连接，清空短连接记录
             self.short_disconnect_times.clear()
+            self.frequent_disconnect_strikes = 0
             return False
         
         current_time = time.time()
