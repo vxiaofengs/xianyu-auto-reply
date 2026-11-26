@@ -21,6 +21,7 @@ interface TabsStore {
   removeTab: (path: string) => void
   removeTabsToRight: (path: string) => void
   removeTabsToLeft: (path: string) => void
+  removeOtherTabs: (path: string) => void
   removeAllTabs: () => void
   setActiveTab: (path: string) => void
 }
@@ -158,8 +159,17 @@ export const useTabsStore = create<TabsStore>()(
         }
       },
       
+      // 只保留仪表盘和指定标签，并切到指定标签
+      removeOtherTabs: (path) => {
+        const { tabs } = get()
+        set({
+          tabs: tabs.filter(t => t.path === '/dashboard' || t.path === path),
+          activeTab: path,
+        })
+      },
+
       removeAllTabs: () => {
-        set({ 
+        set({
           tabs: [{ path: '/dashboard', title: '仪表盘', closable: false }],
           activeTab: '/dashboard'
         })
@@ -186,7 +196,7 @@ export function TabsBar() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
   const { hiddenMenuKeys, isExeMode } = useMenuVisibilityStore()
-  const { tabs, activeTab, addTab, removeTab, removeTabsToRight, removeTabsToLeft, removeAllTabs, setActiveTab } = useTabsStore()
+  const { tabs, activeTab, addTab, removeTab, removeTabsToRight, removeTabsToLeft, removeOtherTabs, removeAllTabs, setActiveTab } = useTabsStore()
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false,
     x: 0,
@@ -288,6 +298,15 @@ export function TabsBar() {
     setContextMenu(prev => ({ ...prev, visible: false }))
   }
 
+  const handleCloseOtherTabs = () => {
+    const { targetPath } = contextMenu
+    removeOtherTabs(targetPath)
+    if (activeTab !== targetPath) {
+      navigate(targetPath)
+    }
+    setContextMenu(prev => ({ ...prev, visible: false }))
+  }
+
   const handleCloseAllTabs = () => {
     removeAllTabs()
     navigate(getMenuAccessFallbackPath(hiddenMenuKeys, isAdmin, isExeMode))
@@ -297,6 +316,7 @@ export function TabsBar() {
   const targetIndex = visibleTabs.findIndex(t => t.path === contextMenu.targetPath)
   const hasRightTabs = targetIndex < visibleTabs.length - 1
   const hasLeftTabs = targetIndex > 1 || (targetIndex === 1 && visibleTabs[0]?.path === '/dashboard')
+  const hasOtherTabs = visibleTabs.some(t => t.path !== contextMenu.targetPath && t.path !== '/dashboard')
 
   return (
     <>
@@ -354,6 +374,13 @@ export function TabsBar() {
             className="w-full px-3 py-1 text-left hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             关闭左侧
+          </button>
+          <button
+            onClick={handleCloseOtherTabs}
+            disabled={!hasOtherTabs}
+            className="w-full px-3 py-1 text-left hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            关闭其他
           </button>
           <div className="border-t border-gray-200 dark:border-gray-700 my-0.5" />
           <button

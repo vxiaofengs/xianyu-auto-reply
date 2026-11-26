@@ -306,7 +306,7 @@ export function Cards() {
                   <th className="w-10 whitespace-nowrap">
                     <button
                       onClick={handleSelectAll}
-                      className="p-1 hover:bg-gray-100 rounded"
+                      className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded"
                       title={selectedIds.size === pagedCards.length ? '取消全选' : '全选'}
                     >
                       {selectedIds.size === pagedCards.length && pagedCards.length > 0 ? (
@@ -339,11 +339,11 @@ export function Cards() {
                   </tr>
                 ) : (
                   pagedCards.map(card => (
-                    <tr key={card.id} className={selectedIds.has(card.id!) ? 'bg-blue-50' : ''}>
+                    <tr key={card.id} className={selectedIds.has(card.id!) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}>
                       <td>
                         <button
                           onClick={() => card.id && handleSelect(card.id)}
-                          className="p-1 hover:bg-gray-100 rounded"
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded"
                         >
                           {selectedIds.has(card.id!) ? (
                             <CheckSquare className="w-4 h-4 text-blue-600 dark:text-blue-400" />

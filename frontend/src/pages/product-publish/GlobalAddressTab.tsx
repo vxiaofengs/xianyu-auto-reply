@@ -244,7 +244,7 @@ export function GlobalAddressTab() {
                   <th className="w-10 whitespace-nowrap">
                     <button
                       onClick={handleSelectAll}
-                      className="p-1 hover:bg-gray-100 rounded"
+                      className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded"
                       title={isAllSelected ? '取消全选' : '全选'}
                     >
                       {isAllSelected ? (
@@ -285,7 +285,7 @@ export function GlobalAddressTab() {
                       <td className="w-10 whitespace-nowrap">
                         <button
                           onClick={() => handleSelect(item.id)}
-                          className="p-1 hover:bg-gray-100 rounded"
+                          className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded"
                           title={selectedIds.has(item.id) ? '取消勾选' : '勾选'}
                         >
                           {selectedIds.has(item.id) ? (

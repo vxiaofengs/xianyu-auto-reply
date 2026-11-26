@@ -6,7 +6,7 @@
  */
 import { useState, useEffect } from 'react'
 import type { FormEvent, ChangeEvent } from 'react'
-import { X, Loader2, ImagePlus } from 'lucide-react'
+import { X, Loader2, ImagePlus, Dices } from 'lucide-react'
 import { updateCard, createCard, uploadCardImage, type CardData } from '@/api/cards'
 import { useUIStore } from '@/store/uiStore'
 import { Select } from '@/components/common/Select'
@@ -686,6 +686,15 @@ export function CardFormModal({ cardId, initialData, onClose, onSaved }: CardFor
                   max={3600}
                 />
                 <span className="text-gray-500">秒</span>
+                <button
+                  type="button"
+                  onClick={() => updateField('delaySeconds', Math.floor(Math.random() * 8) + 1)}
+                  className="btn-ios-secondary flex items-center gap-1 px-3 py-1.5 text-sm"
+                  title="随机生成 1~8 秒的延时"
+                >
+                  <Dices className="w-4 h-4" />
+                  随机
+                </button>
               </div>
               <p className="text-xs text-gray-500 mt-1">设置自动发货的延时时间，0表示立即发货，最大3600秒(1小时)</p>
             </div>

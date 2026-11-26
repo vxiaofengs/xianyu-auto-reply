@@ -1,5 +1,5 @@
-﻿import { useEffect, useState, useRef } from 'react'
-import { CheckSquare, Download, Edit2, ExternalLink, Loader2, Package, PackageX, RefreshCw, Search, Square, Trash2, X, Settings, Plus, MessageSquare, Bot, ChevronLeft, ChevronRight, ImagePlus, Unlink, Tag } from 'lucide-react'
+﻿import { Fragment, useEffect, useState, useRef, type ReactNode } from 'react'
+import { ArrowDown, ArrowUp, ArrowUpDown, CheckSquare,Download, Edit2, ExternalLink, Loader2, Package, PackageX, RefreshCw, Search, Square, Trash2, X, Settings, Plus, MessageSquare, Bot, ChevronLeft, ChevronRight, ImagePlus, Unlink, Tag } from 'lucide-react'
 import { batchDeleteItems, batchDeleteXianyuItems, batchOfflineItems, deleteItem, fetchAllItemsFromAccessibleAccounts, fetchAllItemsFromAccount, getItemsPaginated, updateItem, updateItemMultiQuantityDelivery, updateItemMultiSpec, updateItemPrice, getItemDefaultReply, saveItemDefaultReply, deleteItemDefaultReply, batchSaveItemDefaultReply, batchDeleteItemDefaultReply, getItemAiPrompt, saveItemAiPrompt, batchDeleteItemAiPrompt, batchSaveItemAiPrompt, uploadItemDefaultReplyImage, uploadBatchDefaultReplyImage, type ItemFilterParams } from '@/api/items'
 import { getAccountDetails } from '@/api/accounts'
 import { getUserSetting } from '@/api/settings'
@@ -24,6 +24,49 @@ const EMPTY_LOCATION_REPLY: LocationContactReplyValue = {
   location_latitude: '',
   location_title: DEFAULT_LOCATION_TITLE,
   location_subtitle: '',
+}
+
+type ItemColumnKey =
+  | 'account' | 'item_id' | 'title' | 'price' | 'quantity' | 'status' | 'shelf_time' | 'polished'
+  | 'sku_count' | 'multi_spec' | 'multi_quantity' | 'card' | 'default_reply' | 'ai_prompt' | 'created_at' | 'updated_at'
+type ItemSortValue = string | number | null
+
+const DEFAULT_ITEM_COLUMN_ORDER: ItemColumnKey[] = [
+  'account', 'item_id', 'title', 'price', 'quantity', 'status', 'shelf_time', 'polished',
+  'sku_count', 'multi_spec', 'multi_quantity', 'card', 'default_reply', 'ai_prompt', 'created_at', 'updated_at',
+]
+const ITEM_COLUMN_ORDER_STORAGE_KEY = 'items.columnOrder'
+
+const loadItemColumnOrder = (): ItemColumnKey[] => {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(ITEM_COLUMN_ORDER_STORAGE_KEY) || '[]')
+    if (!Array.isArray(saved)) return DEFAULT_ITEM_COLUMN_ORDER
+    const valid = saved.filter((k, i): k is ItemColumnKey =>
+      DEFAULT_ITEM_COLUMN_ORDER.includes(k) && saved.indexOf(k) === i)
+    return [...valid, ...DEFAULT_ITEM_COLUMN_ORDER.filter(k => !valid.includes(k))]
+  } catch {
+    return DEFAULT_ITEM_COLUMN_ORDER
+  }
+}
+
+const saveItemColumnOrder = (order: ItemColumnKey[]) => {
+  try {
+    localStorage.setItem(ITEM_COLUMN_ORDER_STORAGE_KEY, JSON.stringify(order))
+  } catch {
+    // 无痕模式等场景写不进去，仅本次会话生效
+  }
+}
+
+const toSortNumber = (value: unknown): number | null => {
+  if (value === undefined || value === null || `${value}`.trim() === '') return null
+  const n = parseFloat(String(value).replace(/[^\d.-]/g, ''))
+  return Number.isNaN(n) ? null : n
+}
+
+const toSortTime = (value?: string | null): ItemSortValue => {
+  if (!value) return null
+  const t = Date.parse(value.replace(' ', 'T'))
+  return Number.isNaN(t) ? value : t
 }
 
 
@@ -53,6 +96,12 @@ export function Items() {
     is_multi_spec: null,
     multi_quantity_delivery: null,
   })
+
+  // 列顺序（拖动表头调整，存本地）与当前页排序
+  const [columnOrder, setColumnOrder] = useState<ItemColumnKey[]>(loadItemColumnOrder)
+  const [draggingColumn, setDraggingColumn] = useState<ItemColumnKey | null>(null)
+  const [dragOverColumn, setDragOverColumn] = useState<ItemColumnKey | null>(null)
+  const [itemSort, setItemSort] = useState<{ key: ItemColumnKey; order: 'asc' | 'desc' } | null>(null)
 
   // 编辑弹窗状态
   const [editingItem, setEditingItem] = useState<Item | null>(null)
@@ -1274,6 +1323,308 @@ export function Items() {
 
   const filteredItems = items
 
+  const itemColumns: Record<ItemColumnKey, {
+    title: string
+    thClass: string
+    sortValue: (item: Item) => ItemSortValue
+    cell: (item: Item) => ReactNode
+  }> = {
+    account: {
+      title: '账号ID',
+      thClass: 'min-w-[150px]',
+      sortValue: (item) => item.cookie_id || null,
+      cell: (item) => (
+        <td className="font-medium text-blue-600 dark:text-blue-400">
+          {(() => {
+            const account = accounts.find(acc => acc.id === item.cookie_id)
+            return account?.note ? `${item.cookie_id} (${account.note})` : item.cookie_id
+          })()}
+        </td>
+      ),
+    },
+    item_id: {
+      title: '商品ID',
+      thClass: 'min-w-[160px]',
+      sortValue: (item) => item.item_id || null,
+      cell: (item) => (
+        <td className="text-xs text-gray-500">
+          <a
+            href={`https://www.goofish.com/item?id=${item.item_id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-blue-500 flex items-center gap-1"
+          >
+            {item.item_id}
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        </td>
+      ),
+    },
+    title: {
+      title: '商品标题',
+      thClass: 'min-w-[260px]',
+      sortValue: (item) => item.item_title || item.title || null,
+      cell: (item) => (
+        <td className="max-w-[280px]">
+          <div
+            className="font-medium line-clamp-2 cursor-help"
+            title={item.item_title || item.title || '-'}
+          >
+            {item.item_title || item.title || '-'}
+          </div>
+        </td>
+      ),
+    },
+    price: {
+      title: '价格',
+      thClass: 'min-w-[80px]',
+      sortValue: (item) => toSortNumber(item.item_price || item.price),
+      cell: (item) => (
+        <td className="text-amber-600 font-medium">
+          {item.item_price || (item.price ? `¥${item.price}` : '-')}
+        </td>
+      ),
+    },
+    quantity: {
+      title: '库存',
+      thClass: 'min-w-[80px] text-center',
+      sortValue: (item) => toSortNumber(item.item_quantity),
+      cell: (item) => (
+        <td className="text-center text-gray-600 dark:text-gray-300">
+          {item.item_quantity !== undefined && item.item_quantity !== null && `${item.item_quantity}` !== ''
+            ? item.item_quantity
+            : '-'}
+        </td>
+      ),
+    },
+    status: {
+      title: '状态',
+      thClass: 'min-w-[100px] text-center',
+      sortValue: (item) => item.item_status_desc || null,
+      cell: (item) => (
+        <td className="text-center text-gray-600 dark:text-gray-300">
+          {item.item_status_desc || '-'}
+        </td>
+      ),
+    },
+    shelf_time: {
+      title: '上架时间',
+      thClass: 'min-w-[170px]',
+      sortValue: (item) => toSortTime(item.item_shelf_time),
+      cell: (item) => (
+        <td className="text-gray-500 text-xs">
+          {item.item_shelf_time || '-'}
+        </td>
+      ),
+    },
+    polished: {
+      title: '是否擦亮',
+      thClass: 'min-w-[100px] text-center',
+      sortValue: (item) => (item.is_polished ? 1 : 0),
+      cell: (item) => (
+        <td>
+          <span
+            className={`px-2 py-1 rounded text-xs font-medium ${
+              item.is_polished
+                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+            }`}
+          >
+            {item.is_polished ? '已擦亮' : '未擦亮'}
+          </span>
+        </td>
+      ),
+    },
+    sku_count: {
+      title: '规格数',
+      thClass: 'min-w-[120px] text-center',
+      sortValue: (item) => item.item_sku_count || 0,
+      cell: (item) => (
+        <td className="text-center">
+          {item.item_sku_count && item.item_sku_count > 0 ? (
+            <button
+              onClick={() => setSkuDetailItem(item)}
+              className="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 transition-colors whitespace-nowrap"
+              title="点击查看规格明细"
+            >
+              {item.item_sku_count} 个规格
+            </button>
+          ) : (
+            <span className="text-gray-400 text-xs">-</span>
+          )}
+        </td>
+      ),
+    },
+    multi_spec: {
+      title: '多规格',
+      thClass: 'min-w-[100px] text-center',
+      sortValue: (item) => (item.is_multi_spec || item.has_sku ? 1 : 0),
+      cell: (item) => (
+        <td>
+          <button
+            onClick={() => handleToggleMultiSpec(item)}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+              (item.is_multi_spec || item.has_sku)
+                ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
+            }`}
+            title={(item.is_multi_spec || item.has_sku) ? '点击关闭多规格' : '点击开启多规格'}
+          >
+            {(item.is_multi_spec || item.has_sku) ? '已开启' : '已关闭'}
+          </button>
+        </td>
+      ),
+    },
+    multi_quantity: {
+      title: '多数量发货',
+      thClass: 'min-w-[120px] text-center',
+      sortValue: (item) => (item.multi_quantity_delivery ? 1 : 0),
+      cell: (item) => (
+        <td>
+          <button
+            onClick={() => handleToggleMultiQuantity(item)}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+              item.multi_quantity_delivery
+                ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
+            }`}
+            title={item.multi_quantity_delivery ? '点击关闭多数量发货' : '点击开启多数量发货'}
+          >
+            {item.multi_quantity_delivery ? '已开启' : '已关闭'}
+          </button>
+        </td>
+      ),
+    },
+    card: {
+      title: '关联卡券',
+      thClass: 'min-w-[110px] text-center',
+      sortValue: (item) => (item.has_card ? 1 : 0),
+      cell: (item) => (
+        <td>
+          <button
+            onClick={() => handleOpenDeliveryConfig(item)}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
+              item.has_card
+                ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
+            }`}
+            title={item.has_card ? '已关联卡券' : '点击查看关联卡券'}
+          >
+            <Settings className="w-3 h-3" />
+            {item.has_card ? '已配置' : '未配置'}
+          </button>
+        </td>
+      ),
+    },
+    default_reply: {
+      title: '默认回复',
+      thClass: 'min-w-[110px] text-center',
+      sortValue: (item) => (item.has_default_reply ? (item.default_reply_enabled ? 2 : 1) : 0),
+      cell: (item) => (
+        <td>
+          <button
+            onClick={() => handleOpenDefaultReply(item)}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
+              item.has_default_reply && item.default_reply_enabled
+                ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                : item.has_default_reply
+                ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
+            }`}
+            title={item.has_default_reply ? (item.default_reply_enabled ? '已开启默认回复' : '已配置但未启用') : '点击配置默认回复'}
+          >
+            <MessageSquare className="w-3 h-3" />
+            {item.has_default_reply ? (item.default_reply_enabled ? '已配置' : '已关闭') : '未配置'}
+          </button>
+        </td>
+      ),
+    },
+    ai_prompt: {
+      title: 'AI提示词',
+      thClass: 'min-w-[110px] text-center',
+      sortValue: (item) => (item.has_ai_prompt ? 1 : 0),
+      cell: (item) => (
+        <td>
+          <button
+            onClick={() => handleOpenAiPrompt(item)}
+            className={`px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
+              item.has_ai_prompt
+                ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
+            }`}
+            title={item.has_ai_prompt ? '已配置AI提示词' : '点击配置AI提示词'}
+          >
+            <Bot className="w-3 h-3" />
+            {item.has_ai_prompt ? '已配置' : '未配置'}
+          </button>
+        </td>
+      ),
+    },
+    created_at: {
+      title: '创建时间',
+      thClass: 'min-w-[170px]',
+      sortValue: (item) => toSortTime(item.created_at),
+      cell: (item) => (
+        <td className="text-gray-500 text-xs">
+          {item.created_at ? new Date(item.created_at).toLocaleString() : '-'}
+        </td>
+      ),
+    },
+    updated_at: {
+      title: '更新时间',
+      thClass: 'min-w-[170px]',
+      sortValue: (item) => toSortTime(item.updated_at),
+      cell: (item) => (
+        <td className="text-gray-500 text-xs">
+          {item.updated_at ? new Date(item.updated_at).toLocaleString() : '-'}
+        </td>
+      ),
+    },
+  }
+
+  // 只对当前页数据排序；空值始终排在最后
+  const sortedItems = (() => {
+    if (!itemSort) return filteredItems
+    const getValue = itemColumns[itemSort.key].sortValue
+    const dir = itemSort.order === 'asc' ? 1 : -1
+    return [...filteredItems].sort((a, b) => {
+      const va = getValue(a)
+      const vb = getValue(b)
+      const emptyA = va === null || va === ''
+      const emptyB = vb === null || vb === ''
+      if (emptyA || emptyB) return emptyA === emptyB ? 0 : emptyA ? 1 : -1
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir
+      return String(va).localeCompare(String(vb), 'zh-CN', { numeric: true }) * dir
+    })
+  })()
+
+  // 升序 → 降序 → 取消排序
+  const toggleItemSort = (key: ItemColumnKey) => {
+    setItemSort(prev => {
+      if (prev?.key !== key) return { key, order: 'asc' }
+      return prev.order === 'asc' ? { key, order: 'desc' } : null
+    })
+  }
+
+  const moveItemColumn = (from: ItemColumnKey | null, to: ItemColumnKey) => {
+    if (!from || from === to) return
+    setColumnOrder(prev => {
+      const next = prev.filter(k => k !== from)
+      const targetIndex = next.indexOf(to)
+      // 往右拖放到目标列之后，往左拖放到目标列之前
+      next.splice(prev.indexOf(from) < prev.indexOf(to) ? targetIndex + 1 : targetIndex, 0, from)
+      saveItemColumnOrder(next)
+      return next
+    })
+  }
+
+  const resetItemColumnOrder = () => {
+    setColumnOrder(DEFAULT_ITEM_COLUMN_ORDER)
+    saveItemColumnOrder(DEFAULT_ITEM_COLUMN_ORDER)
+  }
+
+  const isDefaultColumnOrder = columnOrder.every((k, i) => k === DEFAULT_ITEM_COLUMN_ORDER[i])
+
   if (loading) {
     return <PageLoading />
   }
@@ -1489,7 +1840,7 @@ export function Items() {
                   <th className="w-10">
                     <button
                       onClick={toggleSelectAll}
-                      className="p-1 hover:bg-gray-100 rounded"
+                      className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded"
                       title={selectedIds.size === filteredItems.length ? '取消全选' : '全选'}
                     >
                       {selectedIds.size === filteredItems.length && filteredItems.length > 0 ? (
@@ -1499,27 +1850,71 @@ export function Items() {
                       )}
                     </button>
                   </th>
-                  <th className="min-w-[150px]">账号ID</th>
-                  <th className="min-w-[160px]">商品ID</th>
-                  <th className="min-w-[260px]">商品标题</th>
-                  <th className="min-w-[80px]">价格</th>
-                  <th className="min-w-[80px] text-center">库存</th>
-                  <th className="min-w-[100px] text-center">状态</th>
-                  <th className="min-w-[170px]">上架时间</th>
-                  <th className="min-w-[100px] text-center">是否擦亮</th>
-                  <th className="min-w-[120px] text-center">规格数</th>
-                  <th className="min-w-[100px] text-center">多规格</th>
-                  <th className="min-w-[120px] text-center">多数量发货</th>
-                  <th className="min-w-[110px] text-center">关联卡券</th>
-                  <th className="min-w-[110px] text-center">默认回复</th>
-                  <th className="min-w-[110px] text-center">AI提示词</th>
-                  <th className="min-w-[170px]">创建时间</th>
-                  <th className="min-w-[170px]">更新时间</th>
-                  <th className="sticky right-0 bg-slate-50 dark:bg-slate-800 min-w-[70px]">操作</th>
+                  {columnOrder.map((key) => {
+                    const column = itemColumns[key]
+                    const sortOrder = itemSort?.key === key ? itemSort.order : null
+                    return (
+                      <th
+                        key={key}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.effectAllowed = 'move'
+                          e.dataTransfer.setData('text/plain', key)
+                          setDraggingColumn(key)
+                        }}
+                        onDragOver={(e) => {
+                          if (!draggingColumn || draggingColumn === key) return
+                          e.preventDefault()
+                          if (dragOverColumn !== key) setDragOverColumn(key)
+                        }}
+                        onDragLeave={() => setDragOverColumn(prev => (prev === key ? null : prev))}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          moveItemColumn(draggingColumn, key)
+                          setDraggingColumn(null)
+                          setDragOverColumn(null)
+                        }}
+                        onDragEnd={() => {
+                          setDraggingColumn(null)
+                          setDragOverColumn(null)
+                        }}
+                        onClick={() => toggleItemSort(key)}
+                        className={`${column.thClass} cursor-pointer select-none transition-colors hover:text-blue-600 dark:hover:text-blue-400 ${
+                          draggingColumn === key ? 'opacity-40' : ''
+                        } ${dragOverColumn === key ? 'bg-blue-50 dark:bg-blue-900/30' : ''}`}
+                        title="点击排序（当前页），拖动调整列顺序"
+                      >
+                        <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                          {column.title}
+                          {sortOrder === 'asc' ? (
+                            <ArrowUp className="w-3 h-3 text-blue-500" />
+                          ) : sortOrder === 'desc' ? (
+                            <ArrowDown className="w-3 h-3 text-blue-500" />
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 text-gray-300 dark:text-gray-600" />
+                          )}
+                        </span>
+                      </th>
+                    )
+                  })}
+                  <th className="sticky right-0 bg-slate-50 dark:bg-slate-800 min-w-[70px]">
+                    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                      操作
+                      {!isDefaultColumnOrder && (
+                        <button
+                          onClick={resetItemColumnOrder}
+                          className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-slate-700"
+                          title="恢复默认列顺序"
+                        >
+                          <RefreshCw className="w-3 h-3 text-gray-400" />
+                        </button>
+                      )}
+                    </span>
+                  </th>
               </tr>
             </thead>
             <tbody>
-              {filteredItems.length === 0 ? (
+              {sortedItems.length === 0 ? (
                 <tr>
                   <td colSpan={18}>
                     <div className="empty-state py-8">
@@ -1529,12 +1924,12 @@ export function Items() {
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item) => (
-                  <tr key={item.id} className={selectedIds.has(item.id) ? 'bg-blue-50' : ''}>
+                sortedItems.map((item) => (
+                  <tr key={item.id} className={selectedIds.has(item.id) ? 'bg-blue-50 dark:bg-blue-900/20' : ''}>
                     <td>
                       <button
                         onClick={() => toggleSelect(item.id)}
-                        className="p-1 hover:bg-gray-100 rounded"
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded"
                       >
                         {selectedIds.has(item.id) ? (
                           <CheckSquare className="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -1543,145 +1938,9 @@ export function Items() {
                         )}
                       </button>
                     </td>
-                    <td className="font-medium text-blue-600 dark:text-blue-400">
-                      {(() => {
-                        const account = accounts.find(acc => acc.id === item.cookie_id)
-                        return account?.note ? `${item.cookie_id} (${account.note})` : item.cookie_id
-                      })()}
-                    </td>
-                    <td className="text-xs text-gray-500">
-                      <a
-                        href={`https://www.goofish.com/item?id=${item.item_id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:text-blue-500 flex items-center gap-1"
-                      >
-                        {item.item_id}
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </td>
-                    <td className="max-w-[280px]">
-                      <div
-                        className="font-medium line-clamp-2 cursor-help"
-                        title={item.item_title || item.title || '-'}
-                      >
-                        {item.item_title || item.title || '-'}
-                      </div>
-                    </td>
-                    <td className="text-amber-600 font-medium">
-                      {item.item_price || (item.price ? `¥${item.price}` : '-')}
-                    </td>
-                    <td className="text-center text-gray-600 dark:text-gray-300">
-                      {item.item_quantity !== undefined && item.item_quantity !== null && `${item.item_quantity}` !== ''
-                        ? item.item_quantity
-                        : '-'}
-                    </td>
-                    <td className="text-center text-gray-600 dark:text-gray-300">
-                      {item.item_status_desc || '-'}
-                    </td>
-                    <td className="text-gray-500 text-xs">
-                      {item.item_shelf_time || '-'}
-                    </td>
-                    <td>
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          item.is_polished
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                            : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
-                        }`}
-                      >
-                        {item.is_polished ? '已擦亮' : '未擦亮'}
-                      </span>
-                    </td>
-                    <td className="text-center">
-                      {item.item_sku_count && item.item_sku_count > 0 ? (
-                        <button
-                          onClick={() => setSkuDetailItem(item)}
-                          className="px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 transition-colors whitespace-nowrap"
-                          title="点击查看规格明细"
-                        >
-                          {item.item_sku_count} 个规格
-                        </button>
-                      ) : (
-                        <span className="text-gray-400 text-xs">-</span>
-                      )}
-                    </td>
-                    <td>
-                      <button
-                        onClick={() => handleToggleMultiSpec(item)}
-                        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                          (item.is_multi_spec || item.has_sku)
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
-                        }`}
-                        title={(item.is_multi_spec || item.has_sku) ? '点击关闭多规格' : '点击开启多规格'}
-                      >
-                        {(item.is_multi_spec || item.has_sku) ? '已开启' : '已关闭'}
-                      </button>
-                    </td>
-                    <td>
-                      <button
-                        onClick={() => handleToggleMultiQuantity(item)}
-                        className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                          item.multi_quantity_delivery
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
-                        }`}
-                        title={item.multi_quantity_delivery ? '点击关闭多数量发货' : '点击开启多数量发货'}
-                      >
-                        {item.multi_quantity_delivery ? '已开启' : '已关闭'}
-                      </button>
-                    </td>
-                    <td>
-                      <button
-                        onClick={() => handleOpenDeliveryConfig(item)}
-                        className={`px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
-                          item.has_card
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
-                        }`}
-                        title={item.has_card ? '已关联卡券' : '点击查看关联卡券'}
-                      >
-                        <Settings className="w-3 h-3" />
-                        {item.has_card ? '已配置' : '未配置'}
-                      </button>
-                    </td>
-                    <td>
-                      <button
-                        onClick={() => handleOpenDefaultReply(item)}
-                        className={`px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
-                          item.has_default_reply && item.default_reply_enabled
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                            : item.has_default_reply
-                            ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400'
-                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
-                        }`}
-                        title={item.has_default_reply ? (item.default_reply_enabled ? '已开启默认回复' : '已配置但未启用') : '点击配置默认回复'}
-                      >
-                        <MessageSquare className="w-3 h-3" />
-                        {item.has_default_reply ? (item.default_reply_enabled ? '已配置' : '已关闭') : '未配置'}
-                      </button>
-                    </td>
-                    <td>
-                      <button
-                        onClick={() => handleOpenAiPrompt(item)}
-                        className={`px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
-                          item.has_ai_prompt
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
-                        }`}
-                        title={item.has_ai_prompt ? '已配置AI提示词' : '点击配置AI提示词'}
-                      >
-                        <Bot className="w-3 h-3" />
-                        {item.has_ai_prompt ? '已配置' : '未配置'}
-                      </button>
-                    </td>
-                    <td className="text-gray-500 text-xs">
-                      {item.created_at ? new Date(item.created_at).toLocaleString() : '-'}
-                    </td>
-                    <td className="text-gray-500 text-xs">
-                      {item.updated_at ? new Date(item.updated_at).toLocaleString() : '-'}
-                    </td>
+                    {columnOrder.map((key) => (
+                      <Fragment key={key}>{itemColumns[key].cell(item)}</Fragment>
+                    ))}
                     <td className="sticky right-0 bg-white dark:bg-slate-900">
                       <div className="flex gap-1">
                         <button

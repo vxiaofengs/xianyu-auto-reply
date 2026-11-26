@@ -375,7 +375,7 @@ export function MonitorItems() {
             <thead className="sticky top-0 bg-white dark:bg-slate-800 z-10">
               <tr>
                 <th className="w-10 whitespace-nowrap">
-                  <button onClick={handleSelectAll} className="p-1 hover:bg-gray-100 rounded" title={isAllSelected ? '取消全选' : '全选'}>
+                  <button onClick={handleSelectAll} className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded" title={isAllSelected ? '取消全选' : '全选'}>
                     {isAllSelected ? (
                       <CheckSquare className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                     ) : (
@@ -437,7 +437,7 @@ export function MonitorItems() {
                 items.map((item) => (
                   <tr key={item.id} className={selectedIds.has(item.id) ? 'bg-blue-50/60 dark:bg-blue-900/10' : ''}>
                     <td className="w-10 whitespace-nowrap">
-                      <button onClick={() => handleSelect(item.id)} className="p-1 hover:bg-gray-100 rounded" title={selectedIds.has(item.id) ? '取消勾选' : '勾选'}>
+                      <button onClick={() => handleSelect(item.id)} className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded" title={selectedIds.has(item.id) ? '取消勾选' : '勾选'}>
                         {selectedIds.has(item.id) ? (
                           <CheckSquare className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                         ) : (
