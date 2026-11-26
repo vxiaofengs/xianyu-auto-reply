@@ -1465,8 +1465,8 @@ export function Items() {
             onClick={() => handleToggleMultiSpec(item)}
             className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
               (item.is_multi_spec || item.has_sku)
-                ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
+                ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-slate-700'
             }`}
             title={(item.is_multi_spec || item.has_sku) ? '点击关闭多规格' : '点击开启多规格'}
           >
@@ -1485,8 +1485,8 @@ export function Items() {
             onClick={() => handleToggleMultiQuantity(item)}
             className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
               item.multi_quantity_delivery
-                ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
+                ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-slate-700'
             }`}
             title={item.multi_quantity_delivery ? '点击关闭多数量发货' : '点击开启多数量发货'}
           >
@@ -1505,8 +1505,8 @@ export function Items() {
             onClick={() => handleOpenDeliveryConfig(item)}
             className={`px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
               item.has_card
-                ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
+                ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-slate-700'
             }`}
             title={item.has_card ? '已关联卡券' : '点击查看关联卡券'}
           >
@@ -1526,10 +1526,10 @@ export function Items() {
             onClick={() => handleOpenDefaultReply(item)}
             className={`px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
               item.has_default_reply && item.default_reply_enabled
-                ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
+                ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50'
                 : item.has_default_reply
-                ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400'
-                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
+                ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:hover:bg-yellow-900/50'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-slate-700'
             }`}
             title={item.has_default_reply ? (item.default_reply_enabled ? '已开启默认回复' : '已配置但未启用') : '点击配置默认回复'}
           >
@@ -1549,8 +1549,8 @@ export function Items() {
             onClick={() => handleOpenAiPrompt(item)}
             className={`px-2 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1 ${
               item.has_ai_prompt
-                ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400'
-                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400'
+                ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/50'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-slate-700'
             }`}
             title={item.has_ai_prompt ? '已配置AI提示词' : '点击配置AI提示词'}
           >

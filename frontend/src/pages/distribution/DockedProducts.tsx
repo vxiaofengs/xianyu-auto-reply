@@ -516,8 +516,8 @@ export function DockedProducts() {
                             onClick={() => handleToggleSubDock(record)}
                             className={`inline-block px-2 py-0.5 rounded text-xs font-medium cursor-pointer transition-colors ${
                               record.allow_sub_dock
-                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-200'
-                                : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 hover:bg-gray-200'
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50'
+                                : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-700'
                             }`}
                             title="点击切换是否允许下级对接"
                           >

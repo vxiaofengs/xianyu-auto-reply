@@ -76,12 +76,12 @@ export function CustomerOrdersPanel({
             <div className="mt-1 text-gray-400 truncate" title={order.order_no}>订单：{order.order_no}</div>
             {order.delivery_fail_reason && <div className="mt-1 text-red-500 line-clamp-2">{order.delivery_fail_reason}</div>}
             <div className="mt-2 grid grid-cols-2 gap-1.5">
-              <button onClick={() => onViewDetail(order.order_no)} disabled={loadingOrderDetail} className="flex items-center justify-center gap-1 py-1.5 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40">
+              <button onClick={() => onViewDetail(order.order_no)} disabled={loadingOrderDetail} className="flex items-center justify-center gap-1 py-1.5 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 dark:hover:bg-slate-700">
                 <Eye className="w-3.5 h-3.5" />
                 订单详情
               </button>
               {CANCELLABLE_STATUSES.includes(order.status) && (
-                <button onClick={() => onCancel(order.order_no)} disabled={!!cancellingOrderNo || anyActionRunning} className="flex items-center justify-center gap-1 py-1.5 rounded border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-40">
+                <button onClick={() => onCancel(order.order_no)} disabled={!!cancellingOrderNo || anyActionRunning} className="flex items-center justify-center gap-1 py-1.5 rounded border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-40 dark:hover:bg-red-900/50">
                   {cancellingOrderNo === order.order_no ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
                   取消订单
                 </button>

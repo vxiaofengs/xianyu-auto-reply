@@ -366,7 +366,7 @@ export function ItemCardRelationModal({ itemId, itemName, onClose, onSaved }: It
                       disabled={selectAllLoading || !associatedReady || leftTotal === 0}
                       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors disabled:opacity-50 ${
                         allLoadedSelected
-                          ? 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400'
+                          ? 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:hover:bg-orange-900/50'
                           : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400'
                       }`}
                     >
@@ -515,7 +515,7 @@ export function ItemCardRelationModal({ itemId, itemName, onClose, onSaved }: It
                         )}
                         <button
                           onClick={() => toggleCard(card.uniqueKey)}
-                          className="text-red-500 hover:text-red-600 p-1 hover:bg-red-50 rounded transition-colors flex-shrink-0"
+                          className="text-red-500 hover:text-red-600 p-1 hover:bg-red-50 rounded transition-colors flex-shrink-0 dark:hover:bg-red-900/50"
                           title="移除"
                         >
                           <X className="w-4 h-4" />

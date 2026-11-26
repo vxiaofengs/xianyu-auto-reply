@@ -149,7 +149,7 @@ export function AgentOrderDetailModal({ orderId, onClose }: Props) {
                   <DetailRow label="商品ID" value={<span className="font-mono">{detail.item_id}</span>} />
                   <DetailRow label="状态" value={
                     <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                      STATUS_MAP[detail.status]?.className || 'bg-gray-100 text-gray-600'
+                      STATUS_MAP[detail.status]?.className || 'bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-slate-300'
                     }`}>
                       {STATUS_MAP[detail.status]?.label || detail.status}
                     </span>

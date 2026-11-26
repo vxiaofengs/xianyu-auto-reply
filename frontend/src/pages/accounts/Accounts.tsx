@@ -2894,7 +2894,7 @@ export function Accounts() {
               )}
               {qrStatus === 'success' && (
                 <div className="flex flex-col items-center gap-3 text-green-600">
-                  <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
+                  <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center dark:bg-green-900/30">
                     <Power className="w-7 h-7" />
                   </div>
                   <p className="font-medium">登录成功！</p>

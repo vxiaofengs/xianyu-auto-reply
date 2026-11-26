@@ -486,7 +486,7 @@ export function MonitorLogs() {
                 </tr>
               ) : (
                 logs.map((item) => {
-                  const statusInfo = STATUS_LABELS[item.status] || { text: item.status, cls: 'bg-slate-100 text-slate-500' }
+                  const statusInfo = STATUS_LABELS[item.status] || { text: item.status, cls: 'bg-slate-100 text-slate-500 dark:bg-slate-800' }
                   const accounts = item.used_account_ids && item.used_account_ids.length > 0 ? item.used_account_ids.join('，') : (item.account_id || '-')
                   return (
                     <tr key={item.id}>

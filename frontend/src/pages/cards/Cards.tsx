@@ -389,7 +389,7 @@ export function Cards() {
                                 setPreviewImageUrl(card.image_url || '')
                                 setIsImagePreviewOpen(true)
                               }}
-                              className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400 rounded transition-colors inline-flex items-center gap-1"
+                              className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400 rounded transition-colors inline-flex items-center gap-1 dark:hover:bg-purple-900/50"
                             >
                               <Image className="w-3 h-3" />
                               查看原图

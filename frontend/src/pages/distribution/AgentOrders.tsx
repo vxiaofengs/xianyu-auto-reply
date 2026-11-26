@@ -307,7 +307,7 @@ export function AgentOrders() {
                       </td>
                       <td className="whitespace-nowrap">
                         <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                          STATUS_MAP[order.status]?.className || 'bg-gray-100 text-gray-600'
+                          STATUS_MAP[order.status]?.className || 'bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-slate-300'
                         }`}>
                           {STATUS_MAP[order.status]?.label || order.status}
                         </span>
