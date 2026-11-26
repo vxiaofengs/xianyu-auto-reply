@@ -29,6 +29,14 @@ MAX_RETRY = 3
 # 重试间隔（秒）
 RETRY_DELAY = 1.0
 
+# 账号未开通卖家数据罗盘时闲鱼返回的错误码；属于权限问题，重试无意义
+UNAUTHORIZED_RET_CODE = "FAIL_BIZ_IDLE_USER_UNAUTHORIZED"
+UNAUTHORIZED_MESSAGE = "该账号未开通闲鱼卖家数据罗盘"
+
+
+def _is_unauthorized(ret_str: str) -> bool:
+    return UNAUTHORIZED_RET_CODE in ret_str
+
 
 async def fetch_seller_summary(
     cookies_str: str,
@@ -136,6 +144,8 @@ async def fetch_seller_summary(
                     }
                 else:
                     logger.warning(f"卖家数据概览接口返回错误: {ret_str}")
+                    if _is_unauthorized(ret_str):
+                        return {"success": False, "message": UNAUTHORIZED_MESSAGE}
                     # 非成功响应，进行重试
                     await asyncio.sleep(RETRY_DELAY * (retry_count + 1))
                     return await fetch_seller_summary(
@@ -263,6 +273,8 @@ async def fetch_browse_summary(
                     }
                 else:
                     logger.warning(f"流量分布接口返回错误: {ret_str}")
+                    if _is_unauthorized(ret_str):
+                        return {"success": False, "message": UNAUTHORIZED_MESSAGE}
                     await asyncio.sleep(RETRY_DELAY * (retry_count + 1))
                     return await fetch_browse_summary(
                         cookies_str, date_type, date_range, retry_count + 1
