@@ -737,7 +737,9 @@ export function Items() {
         setDefaultReplyContent(result.data.reply_content || '')
         setDefaultReplyImage(result.data.reply_image || '')
         setDefaultReplyEnabled(result.data.enabled ?? true)
-        setDefaultReplyOnce(result.data.reply_once ?? false)
+        // 未配置时后端也返回 success + 空模板（reply_once=false），新建按默认勾选处理
+        const isUnconfigured = result.message === '未配置商品默认回复'
+        setDefaultReplyOnce(isUnconfigured ? true : (result.data.reply_once ?? false))
         setDefaultReplyType((result.data.reply_type as DefaultReplyType) || 'text')
         setDefaultReplyApiUrl(result.data.api_url || '')
         setDefaultReplyApiTimeout(result.data.api_timeout || 80)
