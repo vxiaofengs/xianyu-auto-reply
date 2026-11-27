@@ -12,7 +12,7 @@ set -euo pipefail
 CONFIG="$HOME/Library/Application Support/XianyuKeeper/config.env"
 [ -f "$CONFIG" ] || { echo "未找到配置，请先完成环境安装" >&2; exit 1; }
 source "$CONFIG"
-MYSQL_BIN="$BREW_PREFIX/opt/mysql@8.4/bin"
+MYSQL_BIN="${MYSQL_BIN:-$BREW_PREFIX/opt/mysql@8.4/bin}"
 DB=xianyu_auto_reply
 
 static_dir() {

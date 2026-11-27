@@ -10,7 +10,7 @@
 # 状态写入 ~/Library/Application Support/XianyuKeeper/setup-status（running / done / failed），
 # 闲鱼助手据此判断何时启动服务。
 
-set -euo pipefail
+set -Eeuo pipefail  # -E：函数内出错也触发 ERR trap，状态才会写成 failed
 
 MODE="${1:-install}"
 SUPPORT="$HOME/Library/Application Support/XianyuKeeper"
@@ -70,6 +70,101 @@ REPO_DIR="${REPO_DIR:-$HOME/XianyuAutoReply}"
 printf '\033[1m闲鱼助手 · %s\033[0m\n' "$([ "$MODE" = update ] && echo 更新程序 || echo 安装运行环境)"
 echo "程序目录：$REPO_DIR"
 
+# macOS 12 及以下：Homebrew 已不提供预编译包，改用官方二进制 / 源码编译的独立运行环境
+LEGACY=0
+[ "$(sw_vers -productVersion | cut -d. -f1)" -lt 13 ] && LEGACY=1
+
+if [ "$LEGACY" = 1 ]; then
+# ---------------------------------------------------------------------------
+step "安装运行环境（macOS 12 独立版：Python / Node / MySQL / Redis）"
+RUNTIME="$SUPPORT/runtime"
+mkdir -p "$RUNTIME/bin" "$RUNTIME/logs"
+export UV_INSTALL_DIR="$RUNTIME/bin" UV_PYTHON_INSTALL_DIR="$RUNTIME/python" INSTALLER_NO_MODIFY_PATH=1
+[ -x "$RUNTIME/bin/uv" ] || retry 3 sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+retry 3 "$RUNTIME/bin/uv" python install 3.11
+PYTHON="$("$RUNTIME/bin/uv" python find 3.11)"
+ok "Python：$("$PYTHON" -V)"
+
+# Node 24 起要求 macOS 13.5，固定 22 LTS
+NODE_VER=v22.23.5
+if [ ! -x "$RUNTIME/node/bin/node" ]; then
+  retry 3 curl -fsSL -o "$RUNTIME/node.tgz" "https://registry.npmmirror.com/-/binary/node/$NODE_VER/node-$NODE_VER-darwin-x64.tar.gz"
+  rm -rf "$RUNTIME/node" && mkdir -p "$RUNTIME/node"
+  tar -xzf "$RUNTIME/node.tgz" -C "$RUNTIME/node" --strip-components 1 && rm -f "$RUNTIME/node.tgz"
+fi
+ok "Node：$("$RUNTIME/node/bin/node" -v)"
+
+# MySQL 8.0.31 是最后一个提供 macOS 12 构建的官方版本
+MYSQL_PKG=mysql-8.0.31-macos12-x86_64
+if [ ! -x "$RUNTIME/mysql/bin/mysqld" ]; then
+  retry 3 curl -fsSL -o "$RUNTIME/mysql.tgz" "https://cdn.mysql.com/archives/mysql-8.0/$MYSQL_PKG.tar.gz"
+  rm -rf "$RUNTIME/mysql" && mkdir -p "$RUNTIME/mysql"
+  tar -xzf "$RUNTIME/mysql.tgz" -C "$RUNTIME/mysql" --strip-components 1 && rm -f "$RUNTIME/mysql.tgz"
+fi
+if [ ! -d "$RUNTIME/mysql-data/mysql" ]; then
+  rm -rf "$RUNTIME/mysql-data"
+  "$RUNTIME/mysql/bin/mysqld" --initialize-insecure --basedir="$RUNTIME/mysql" --datadir="$RUNTIME/mysql-data" >/dev/null 2>&1
+fi
+ok "MySQL：$("$RUNTIME/mysql/bin/mysqld" --version | grep -oE 'Ver [0-9.]+' | cut -d' ' -f2)"
+
+REDIS_VER=7.4.2
+if [ ! -x "$RUNTIME/redis/bin/redis-server" ]; then
+  retry 3 curl -fsSL -o "$RUNTIME/redis.tgz" "https://download.redis.io/releases/redis-$REDIS_VER.tar.gz"
+  rm -rf "$RUNTIME/redis-src" && mkdir -p "$RUNTIME/redis-src"
+  tar -xzf "$RUNTIME/redis.tgz" -C "$RUNTIME/redis-src" --strip-components 1
+  make -C "$RUNTIME/redis-src" -j2 >"$RUNTIME/logs/redis-build.log" 2>&1
+  # make install 不支持带空格的路径（Application Support），直接复制产物
+  mkdir -p "$RUNTIME/redis/bin"
+  cp "$RUNTIME/redis-src/src/redis-server" "$RUNTIME/redis-src/src/redis-cli" "$RUNTIME/redis/bin/"
+  rm -rf "$RUNTIME/redis-src" "$RUNTIME/redis.tgz"
+fi
+mkdir -p "$RUNTIME/redis-data"
+ok "Redis：$("$RUNTIME/redis/bin/redis-server" --version | grep -oE 'v=[0-9.]+' | cut -d= -f2)"
+
+MYSQL_BIN="$RUNTIME/mysql/bin"
+REDIS_CLI="$RUNTIME/redis/bin/redis-cli"
+BIN_PATH="$RUNTIME/node/bin:$RUNTIME/mysql/bin:$RUNTIME/redis/bin:$RUNTIME/bin"
+export PATH="$BIN_PATH:$PATH"
+# 新版 Playwright / patchright 自带的 Node 驱动和 Chromium 需要 macOS 13
+# （不用 PIP_CONSTRAINT 环境变量：pip 会按空格拆分，路径里有 Application Support）
+printf 'playwright==1.61.0\npatchright==1.61.2\n' > "$RUNTIME/pip-constraints.txt"
+# 很多库的新版只发 macOS 13+ 的 wheel，不加 --prefer-binary 会在这台机器上现场编译（cryptography / opencv 等，数小时且易失败）
+PIP_C=(-c "$RUNTIME/pip-constraints.txt" --prefer-binary)
+
+# ---------------------------------------------------------------------------
+step "启动 MySQL / Redis（开机自动运行）"
+agent_plist() {  # agent_plist <label> <参数...>：生成常驻 LaunchAgent 并加载
+  local label="$1"; shift
+  local plist="$HOME/Library/LaunchAgents/$label.plist" args="" a
+  for a in "$@"; do args="$args<string>$a</string>"; done
+  mkdir -p "$HOME/Library/LaunchAgents"
+  cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>$label</string>
+<key>ProgramArguments</key><array>$args</array>
+<key>RunAtLoad</key><true/>
+<key>KeepAlive</key><true/>
+<key>StandardErrorPath</key><string>$RUNTIME/logs/$label.log</string>
+</dict></plist>
+PLIST
+  # bootout 是异步的，没卸载完就 bootstrap 会报 5: Input/output error
+  launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1 || true
+  for _ in $(seq 1 20); do launchctl print "gui/$(id -u)/$label" >/dev/null 2>&1 || break; sleep 0.5; done
+  retry 3 launchctl bootstrap "gui/$(id -u)" "$plist"
+}
+agent_plist local.xianyu.dep.mysql "$RUNTIME/mysql/bin/mysqld" --basedir="$RUNTIME/mysql" --datadir="$RUNTIME/mysql-data" \
+  --port=3306 --bind-address=127.0.0.1 --socket=/tmp/mysql.sock --mysqlx=OFF --log-error="$RUNTIME/logs/mysqld.err"
+agent_plist local.xianyu.dep.redis "$RUNTIME/redis/bin/redis-server" --bind 127.0.0.1 --port 6379 --dir "$RUNTIME/redis-data"
+for i in $(seq 1 60); do "$MYSQL_BIN/mysqladmin" -uroot ping >/dev/null 2>&1 && break; sleep 1; done
+"$MYSQL_BIN/mysqladmin" -uroot ping >/dev/null
+ok "MySQL 运行中"
+for i in $(seq 1 30); do "$REDIS_CLI" ping >/dev/null 2>&1 && break; sleep 1; done
+"$REDIS_CLI" ping >/dev/null
+ok "Redis 运行中"
+
+else
 # ---------------------------------------------------------------------------
 step "检查 Homebrew"
 BREW=""
@@ -116,6 +211,8 @@ ok "MySQL 运行中"
 for i in $(seq 1 30); do "$BREW_PREFIX/bin/redis-cli" ping >/dev/null 2>&1 && break; sleep 1; done
 "$BREW_PREFIX/bin/redis-cli" ping >/dev/null
 ok "Redis 运行中"
+BIN_PATH="$BREW_PREFIX/bin"
+fi
 
 # ---------------------------------------------------------------------------
 step "获取程序代码"
@@ -153,8 +250,10 @@ step "配置数据库"
 PW=""
 [ -f "$REPO_DIR/backend-web/.env" ] && PW="$(grep -E '^MYSQL_PASSWORD=' "$REPO_DIR/backend-web/.env" | head -1 | cut -d= -f2- || true)"
 [ -z "$PW" ] && PW="$(openssl rand -hex 12)"
+# MySQL 8.0 的 SET PERSIST 不接受表达式，先查当前值再设
+[ "$("$MYSQL_BIN/mysql" -uroot -N -e 'SELECT @@max_connections')" -lt 2000 ] && \
+  "$MYSQL_BIN/mysql" -uroot -e 'SET PERSIST max_connections = 2000'
 "$MYSQL_BIN/mysql" -uroot <<SQL
-SET PERSIST max_connections = GREATEST(@@max_connections, 2000);
 CREATE DATABASE IF NOT EXISTS xianyu_auto_reply CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS 'xianyu'@'localhost' IDENTIFIED BY '$PW';
 CREATE USER IF NOT EXISTS 'xianyu'@'127.0.0.1' IDENTIFIED BY '$PW';
@@ -201,9 +300,9 @@ for d in "${SERVICES[@]}"; do
     cd "$REPO_DIR/$d"
     [ -x .venv/bin/python ] || "$PYTHON" -m venv .venv
     retry 3 .venv/bin/python -m pip install -q -U pip -i "$PYPI_MIRROR"
-    retry 3 .venv/bin/python -m pip install -q -e . -i "$PYPI_MIRROR"
+    retry 3 .venv/bin/python -m pip install -q -e . -i "$PYPI_MIRROR" ${PIP_C[@]+"${PIP_C[@]}"}
     # 上游 websocket / scheduler 漏声明了公共代码用到的 email-validator
-    retry 3 .venv/bin/python -m pip install -q 'email-validator>=2' -i "$PYPI_MIRROR"
+    retry 3 .venv/bin/python -m pip install -q 'email-validator>=2' -i "$PYPI_MIRROR" ${PIP_C[@]+"${PIP_C[@]}"}
   )
   ok "$d 依赖就绪"
 done
@@ -229,10 +328,21 @@ step "安装网页前端依赖"
 ok "前端依赖就绪"
 
 # ---------------------------------------------------------------------------
-cat > "$CONFIG" <<EOF
+if [ "$LEGACY" = 1 ]; then
+  cat > "$CONFIG" <<EOF
+REPO_DIR="$REPO_DIR"
+BIN_PATH="$BIN_PATH"
+MYSQL_BIN="$MYSQL_BIN"
+DEPS_MODE="launchd"
+EOF
+else
+  cat > "$CONFIG" <<EOF
 REPO_DIR="$REPO_DIR"
 BREW_PREFIX="$BREW_PREFIX"
 EOF
+fi
+# 手动设置过的管理网页监听地址（如 0.0.0.0 供远程访问）在更新时保留
+[ -n "${FRONTEND_HOST:-}" ] && echo "FRONTEND_HOST=\"$FRONTEND_HOST\"" >> "$CONFIG"
 echo done > "$STATUS"
 trap - ERR
 

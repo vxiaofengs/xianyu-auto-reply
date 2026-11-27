@@ -18,7 +18,7 @@ echo "==> 编译"
 rm -rf "$OUT"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 for arch in arm64 x86_64; do
-  swiftc -O -target "$arch-apple-macos13.0" "$DIR/main.swift" "$DIR/Shared/FishShape.swift" -o "$OUT/$EXEC-$arch" \
+  swiftc -O -target "$arch-apple-macos12.0" "$DIR/main.swift" "$DIR/Shared/FishShape.swift" -o "$OUT/$EXEC-$arch" \
     -framework Cocoa -framework IOKit -framework ServiceManagement -framework UserNotifications
 done
 lipo -create "$OUT/$EXEC-arm64" "$OUT/$EXEC-x86_64" -output "$APP/Contents/MacOS/$EXEC"
@@ -48,7 +48,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>NSHumanReadableCopyright</key><string>仅供个人使用</string>
   <key>LSUIElement</key><true/>
-  <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>

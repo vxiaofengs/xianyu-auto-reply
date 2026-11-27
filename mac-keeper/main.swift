@@ -31,11 +31,14 @@ let kAdminURL = URL(string: "http://127.0.0.1:9000/dashboard")!
 /// 服务反复崩溃后暂停多久再自动重试
 let kGaveUpRetryInterval: TimeInterval = 600
 
-/// 后台依赖（brew 管理），运行期每 kDependencyCheckTicks 次巡检（3s/次）检查一次
-let kDependencies: [(formula: String, title: String, port: UInt16)] = [
-    ("mysql@8.4", "MySQL", 3306),
-    ("redis", "Redis", 6379),
+/// 后台依赖，运行期每 kDependencyCheckTicks 次巡检（3s/次）检查一次。
+/// formula：brew 模式的包名；label：launchd 模式（macOS 12 独立运行环境）的 LaunchAgent 标签
+let kDependencies: [(formula: String, label: String, title: String, port: UInt16)] = [
+    ("mysql@8.4", "local.xianyu.dep.mysql", "MySQL", 3306),
+    ("redis", "local.xianyu.dep.redis", "Redis", 6379),
 ]
+/// macOS 12 无 SMAppService 时用的开机启动项
+let kLoginAgentLabel = "local.xianyu.keeper"
 let kDependencyCheckTicks = 10
 let kDependencyRestartInterval: TimeInterval = 60
 
@@ -76,7 +79,13 @@ final class ServiceProc {
 
 struct Config {
     let repoDir: String
+    /// 子进程 PATH 前缀（brew 模式为 $BREW_PREFIX/bin，独立运行环境为 node/mysql/redis 各自的 bin）
+    let binPath: String
     let brewPrefix: String
+    /// brew：brew services 管理 MySQL / Redis；launchd：自建 LaunchAgent 管理
+    let depsMode: String
+    /// 管理网页监听地址：默认仅本机；0.0.0.0 可从局域网 / Tailscale 访问
+    let frontendHost: String
 
     static func load() -> Config? {
         guard let text = try? String(contentsOf: kConfigFile, encoding: .utf8) else { return nil }
@@ -88,9 +97,13 @@ struct Config {
             if v.hasPrefix("\""), v.hasSuffix("\""), v.count >= 2 { v = String(v.dropFirst().dropLast()) }
             kv[k] = v
         }
-        guard let repo = kv["REPO_DIR"], let brew = kv["BREW_PREFIX"],
+        guard let repo = kv["REPO_DIR"],
               FileManager.default.fileExists(atPath: repo + "/backend-web/.venv/bin/python") else { return nil }
-        return Config(repoDir: repo, brewPrefix: brew)
+        let brew = kv["BREW_PREFIX"] ?? ""
+        let depsMode = kv["DEPS_MODE"] ?? "brew"
+        guard depsMode == "launchd" || !brew.isEmpty else { return nil }
+        return Config(repoDir: repo, binPath: kv["BIN_PATH"] ?? "\(brew)/bin", brewPrefix: brew, depsMode: depsMode,
+                      frontendHost: kv["FRONTEND_HOST"] ?? "127.0.0.1")
     }
 }
 
@@ -209,7 +222,7 @@ final class ServiceManager {
 
     private var childEnv: [String: String] {
         var env = ProcessInfo.processInfo.environment
-        env["PATH"] = "\(config.brewPrefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        env["PATH"] = "\(config.binPath):/usr/bin:/bin:/usr/sbin:/sbin"
         env["PYTHONUNBUFFERED"] = "1"
         env["LANG"] = "zh_CN.UTF-8"
         return env
@@ -274,12 +287,10 @@ final class ServiceManager {
     private func ensureDependencies() {
         dependencyError = nil
         depDown = []
-        let brew = config.brewPrefix + "/bin/brew"
-        let deps = kDependencies.map { ($0.formula, $0.port) }
-        for (formula, port) in deps where !isPortOpen(port) {
-            runCommand(brew, ["services", "start", formula], env: childEnv)
+        for dep in kDependencies where !isPortOpen(dep.port) {
+            startDependency(dep)
         }
-        for (formula, port) in deps {
+        for (formula, port) in kDependencies.map({ ($0.title, $0.port) }) {
             var ok = isPortOpen(port)
             for _ in 0..<60 where !ok {
                 Thread.sleep(forTimeInterval: 1)
@@ -291,8 +302,22 @@ final class ServiceManager {
     }
 
     /// 运行期巡检 MySQL / Redis：被清理工具等外部程序停掉时自动拉起（brew services start 会同时恢复开机自启）
+    private func startDependency(_ dep: (formula: String, label: String, title: String, port: UInt16)) {
+        if config.depsMode == "launchd" {
+            // plist 被清理工具删掉时无法恢复，只能提示重跑环境安装；已卸载则重新加载，已加载则强制拉起
+            let plist = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/LaunchAgents/\(dep.label).plist").path
+            let domain = "gui/\(getuid())"
+            if runCommand("/bin/launchctl", ["print", "\(domain)/\(dep.label)"]).status != 0 {
+                runCommand("/bin/launchctl", ["bootstrap", domain, plist])
+            }
+            runCommand("/bin/launchctl", ["kickstart", "\(domain)/\(dep.label)"])
+        } else {
+            runCommand(config.brewPrefix + "/bin/brew", ["services", "start", dep.formula], env: childEnv)
+        }
+    }
+
     private func checkDependencies() {
-        let brew = config.brewPrefix + "/bin/brew"
         let now = Date()
         for dep in kDependencies {
             if isPortOpen(dep.port) {
@@ -306,7 +331,7 @@ final class ServiceManager {
             }
             if let last = depLastStart[dep.formula], now.timeIntervalSince(last) < kDependencyRestartInterval { continue }
             depLastStart[dep.formula] = now
-            runCommand(brew, ["services", "start", dep.formula], env: childEnv)
+            startDependency(dep)
         }
         let downTitles = kDependencies.filter { depDown.contains($0.formula) }.map(\.title)
         dependencyError = downTitles.isEmpty ? nil : "\(downTitles.joined(separator: "、")) 已停止，正在自动恢复"
@@ -352,7 +377,7 @@ final class ServiceManager {
         if p.def.key == "frontend" {
             cwd = repo + "/frontend"
             exe = cwd + "/node_modules/.bin/vite"
-            args = ["--host", "127.0.0.1", "--port", "\(p.def.port)", "--strictPort"]
+            args = ["--host", config.frontendHost, "--port", "\(p.def.port)", "--strictPort"]
         } else {
             cwd = repo + "/" + p.def.key
             exe = cwd + "/.venv/bin/python"
@@ -681,7 +706,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         noSleep.state = preventSleep ? .on : .off
         menu.addItem(noSleep)
         let login = action("登录时自动打开", #selector(toggleLogin))
-        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        login.state = isLoginItemEnabled ? .on : .off
         menu.addItem(login)
         menu.addItem(.separator())
         menu.addItem(action("关于闲鱼助手", #selector(showAbout)))
@@ -798,12 +823,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         runSetup(mode: "install")
     }
 
+    private var loginAgentURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents/\(kLoginAgentLabel).plist")
+    }
+
+    var isLoginItemEnabled: Bool {
+        if #available(macOS 13.0, *) { return SMAppService.mainApp.status == .enabled }
+        return FileManager.default.fileExists(atPath: loginAgentURL.path)
+    }
+
     @objc func toggleLogin() {
         do {
-            if SMAppService.mainApp.status == .enabled {
-                try SMAppService.mainApp.unregister()
+            if #available(macOS 13.0, *) {
+                if SMAppService.mainApp.status == .enabled {
+                    try SMAppService.mainApp.unregister()
+                } else {
+                    try SMAppService.mainApp.register()
+                }
+            } else if isLoginItemEnabled {
+                try FileManager.default.removeItem(at: loginAgentURL)
             } else {
-                try SMAppService.mainApp.register()
+                // 登录时用 open 拉起本应用（不设 KeepAlive，退出后不会被重新拉起）
+                let plist: [String: Any] = [
+                    "Label": kLoginAgentLabel,
+                    "ProgramArguments": ["/usr/bin/open", "-a", Bundle.main.bundlePath],
+                    "RunAtLoad": true,
+                ]
+                try FileManager.default.createDirectory(at: loginAgentURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+                try data.write(to: loginAgentURL)
             }
         } catch {
             let alert = NSAlert()
